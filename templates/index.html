@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATOMICam — Live View</title>
+  <style>
+    /* ── Design System ─────────────────────────────────────────── */
+    :root {
+      --bg:          #0a0c0f;
+      --surface:     #111418;
+      --surface2:    #181d24;
+      --border:      #1e2730;
+      --accent:      #00e5ff;
+      --accent2:     #ff6b35;
+      --text:        #c8d8e8;
+      --text-dim:    #4a6070;
+      --text-bright: #eaf4ff;
+      --green:       #39ff90;
+      --red:         #ff3b5c;
+      --mono:        'Share Tech Mono', monospace;
+      --sans:        'Exo 2', sans-serif;
+      --radius:      4px;
+      --glow:        0 0 12px rgba(0,229,255,0.25);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 300;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Scanline texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo { display: flex; align-items: center; gap: 12px; }
+
+    .logo-icon {
+      width: 32px; height: 32px;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-icon .nucleus {
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--accent);
+      position: relative;
+      z-index: 2;
+    }
+    .logo-icon .orbit {
+      position: absolute;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      opacity: 0.7;
+      top: 50%; left: 50%;
+      transform-origin: center center;
+    }
+    .logo-icon .orbit-1 { width: 28px; height: 12px; margin-left: -14px; margin-top: -6px; transform: rotate(0deg); }
+    .logo-icon .orbit-2 { width: 28px; height: 12px; margin-left: -14px; margin-top: -6px; transform: rotate(60deg); }
+    .logo-icon .orbit-3 { width: 28px; height: 12px; margin-left: -14px; margin-top: -6px; transform: rotate(-60deg); }
+
+    .logo-text { font-family: var(--mono); font-size: 1.1rem; color: var(--text-bright); letter-spacing: 0.15em; }
+    .logo-text span { color: var(--accent); }
+
+    .header-status { display: flex; align-items: center; gap: 20px; font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); }
+
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    #clock { color: var(--text); }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .app { display: grid; grid-template-rows: auto 1fr; height: calc(100vh - 57px); }
+
+    /* ── View toggle tabs ───────────────────────────────────────── */
+    .view-tabs {
+      display: flex;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tab-btn {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      background: transparent;
+      border: 1px solid var(--border);
+      padding: 6px 18px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      position: relative;
+    }
+    .tab-btn.tab-right {
+      margin-left: auto;
+    }
+    /* Grid + Dedicated form one segmented pair; Admin is a standalone,
+       fully-bordered button pushed to the right. The 2nd button overlaps the
+       first by 1px so their shared border reads as one line, while each keeps a
+       full border that can highlight on all four edges when active. */
+    .tab-btn:first-child  { border-radius: var(--radius) 0 0 var(--radius); }
+    .tab-btn:nth-child(2) { border-radius: 0 var(--radius) var(--radius) 0; margin-left: -1px; }
+    .tab-btn.tab-right    { border-radius: var(--radius); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.07);
+      box-shadow: var(--glow);
+      z-index: 1;
+    }
+
+    /* ── Grid View ──────────────────────────────────────────────── */
+    #view-grid { padding: 16px 24px; overflow-y: auto; }
+
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .cam-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      position: relative;
+    }
+    .cam-tile:hover { border-color: var(--accent); box-shadow: var(--glow); }
+
+    .cam-tile-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 12px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .cam-tile-label { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; color: var(--accent); text-transform: uppercase; }
+    .cam-tile-hint  { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); }
+
+    .cam-tile-media { position: relative; line-height: 0; }
+    .cam-tile img { width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover; background: #000; }
+    /* Rotated cameras stream portrait (3:4); contain letterboxes them cleanly */
+    .cam-tile img.rotated { object-fit: contain; }
+    /* Read-only reticle overlay on each tile, drawn from the camera's saved state */
+    .cam-tile-reticle { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    /* Unified "No signal" overlay for any stream that isn't delivering frames */
+    .no-signal-overlay {
+      position: absolute; inset: 0;
+      display: none;
+      align-items: center; justify-content: center;
+      background: #0a0e12;
+      color: var(--text-dim);
+      font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .cam-tile-media.signal-lost .no-signal-overlay,
+    .stream-canvas-wrap.signal-lost .no-signal-overlay { display: flex; }
+
+    .cam-tile-footer { padding: 5px 12px; font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); display: flex; gap: 12px; }
+
+    .cam-tile-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,229,255,0.0);
+      transition: background 0.15s;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .cam-tile:hover .cam-tile-overlay { background: rgba(0,229,255,0.04); }
+    .cam-tile-overlay span {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      color: var(--accent);
+      background: rgba(0,0,0,0.75);
+      border: 1px solid var(--accent);
+      padding: 5px 14px;
+      opacity: 0;
+      transition: opacity 0.15s;
+      text-transform: uppercase;
+    }
+    .cam-tile:hover .cam-tile-overlay span { opacity: 1; }
+
+    /* ── Dedicated View ─────────────────────────────────────────── */
+    #view-dedicated { display: none; padding: 16px 24px; overflow-y: auto; }
+
+    .dedicated-layout {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 16px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .cam-selector { display: flex; gap: 8px; margin-bottom: 12px; }
+
+    .cam-sel-btn {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 5px 14px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .cam-sel-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.07);
+      box-shadow: var(--glow);
+    }
+
+    .dedicated-stream-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .dedicated-stream-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .stream-title { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.12em; color: var(--accent); text-transform: uppercase; }
+    .stream-badge { font-family: var(--mono); font-size: 0.6rem; color: var(--green); border: 1px solid var(--green); padding: 2px 8px; border-radius: 2px; letter-spacing: 0.1em; }
+
+    /* Stream + reticle container */
+    .stream-canvas-wrap { position: relative; width: 100%; line-height: 0; }
+
+    #dedicated-img { width: 100%; display: block; aspect-ratio: 4/3; object-fit: contain; background: #000; }
+
+    /* SVG reticle overlay */
+    #reticle-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      pointer-events: none;
+      overflow: visible;
+    }
+    #reticle-svg.active {
+      display: block;
+      pointer-events: all;
+      cursor: move;
+    }
+
+    /* ── Controls Panel ─────────────────────────────────────────── */
+    .controls-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      align-self: start;
+    }
+    .controls-header {
+      padding: 10px 16px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .controls-title { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; color: var(--text); text-transform: uppercase; }
+
+    .reset-btn {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.08em;
+      color: var(--accent2);
+      background: transparent;
+      border: 1px solid var(--accent2);
+      padding: 3px 10px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .reset-btn:hover { background: rgba(255,107,53,0.12); box-shadow: 0 0 10px rgba(255,107,53,0.3); }
+
+    .controls-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; }
+
+    .ctrl-row { display: flex; flex-direction: column; gap: 5px; }
+    .ctrl-label-row { display: flex; justify-content: space-between; align-items: baseline; }
+    .ctrl-label { font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase; }
+    .ctrl-value { font-family: var(--mono); font-size: 0.72rem; color: var(--accent); min-width: 36px; text-align: right; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%; height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+      transition: transform 0.1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px;
+      background: var(--accent);
+      border: none; border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+      cursor: pointer;
+    }
+
+    /* ── Reticle Section ────────────────────────────────────────── */
+    .reticle-section {
+      border-top: 1px solid var(--border);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .reticle-section-title {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.12em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    /* Reticle type buttons */
+    .reticle-type-row { display: flex; gap: 6px; }
+    .reticle-type-btn {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 4px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .reticle-type-btn:hover { border-color: var(--text-dim); }
+    .reticle-type-btn.active { border-color: var(--accent); background: rgba(0,229,255,0.07); box-shadow: var(--glow); }
+    .reticle-type-btn svg { width: 28px; height: 28px; }
+
+    /* Orientation buttons reuse the type-button frame but hold text */
+    .rot-btn { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); letter-spacing: 0.05em; }
+    .rot-btn.active { color: var(--accent); }
+
+    /* Resolution dropdown */
+    .res-select {
+      width: 100%;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--text);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 8px;
+      cursor: pointer;
+      outline: none;
+    }
+    .res-select:focus { border-color: var(--accent); box-shadow: var(--glow); }
+
+    /* Color picker */
+    .reticle-color-row { display: flex; align-items: center; gap: 10px; }
+    .reticle-color-label { font-family: var(--mono); font-size: 0.63rem; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase; flex-shrink: 0; }
+    /* Dedicated reticle shapes read their opacity from this variable (set by JS).
+       The resize-handle polygon is excluded, so it stays fully grabbable. */
+    #reticle-svg circle, #reticle-svg line { opacity: var(--reticle-opacity, 0.5); }
+    .reticle-opacity-slider { flex: 1; min-width: 0; }
+
+    input[type="color"] {
+      width: 28px; height: 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2px;
+      cursor: pointer;
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+    /* Reticle resize handle — hidden until the pointer is over the active reticle */
+    .reticle-handle { opacity: 0; transition: opacity 0.15s; cursor: nwse-resize; }
+    #reticle-svg.active:hover .reticle-handle { opacity: 1; }
+
+    /* ── Admin View ─────────────────────────────────────────────── */
+    #admin-options { display: none; padding: 16px 24px; overflow-y: auto; }
+
+    .admin-panel {
+      max-width: 620px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .admin-panel-header {
+      padding: 10px 16px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      color: var(--text);
+      text-transform: uppercase;
+    }
+    .admin-buttons { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    .admin-action {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      text-align: left;
+      font-family: var(--sans);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      cursor: pointer;
+      color: var(--text);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .admin-action:hover { border-color: var(--accent); box-shadow: var(--glow); }
+    .admin-action:disabled { opacity: 0.5; pointer-events: none; }
+
+    .admin-action .icon {
+      width: 34px; height: 34px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      color: var(--accent);
+    }
+    .admin-action .icon svg { width: 18px; height: 18px; }
+
+    .admin-text  { display: flex; flex-direction: column; }
+    .admin-label { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.08em; color: var(--text-bright); text-transform: uppercase; }
+    .admin-desc  { font-family: var(--mono); font-size: 0.6rem; color: var(--text-dim); margin-top: 3px; letter-spacing: 0.04em; line-height: 1.5; }
+
+    /* Danger variant (reboot) */
+    .admin-action.danger .icon { color: var(--red); }
+    .admin-action.danger:hover { border-color: var(--red); box-shadow: 0 0 12px rgba(255,59,92,0.3); }
+
+    .admin-note {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      padding: 0 16px 18px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Camera configuration panel ─────────────────────────────── */
+    .cam-cfg-body { padding: 16px; }
+
+    .cam-cfg-row {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+    }
+    .cam-cfg-row:first-of-type { border-top: none; }
+    .cam-cfg-slot { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.08em; color: var(--accent); text-transform: uppercase; }
+
+    .cam-cfg-body input[type="text"],
+    .cam-cfg-body select {
+      width: 100%;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--text);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 8px;
+      outline: none;
+    }
+    .cam-cfg-body input[type="text"]:focus,
+    .cam-cfg-body select:focus { border-color: var(--accent); box-shadow: var(--glow); }
+    .cam-cfg-body select { cursor: pointer; }
+
+    .cam-cfg-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+    .cam-cfg-save {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid var(--accent);
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .cam-cfg-save:hover { background: rgba(0,229,255,0.1); box-shadow: var(--glow); }
+    .cam-cfg-save:disabled { opacity: 0.5; pointer-events: none; }
+
+    .cam-cfg-status { font-family: var(--mono); font-size: 0.6rem; line-height: 1.6; color: var(--text-dim); margin-top: 12px; }
+    .cam-cfg-status .ok  { color: var(--green); }
+    .cam-cfg-status .err { color: var(--red); }
+
+    /* ── Connection banner ──────────────────────────────────────── */
+    #offline-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 9px 16px;
+      background: var(--red);
+      color: #fff;
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transform: translateY(-100%);
+      transition: transform 0.25s ease, background 0.25s ease;
+      pointer-events: none;
+    }
+    #offline-banner.show { transform: translateY(0); }
+    #offline-banner.reconnected { background: var(--green); color: #06110a; }
+    #offline-banner .offline-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #fff;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    #offline-banner.reconnected .offline-dot { animation: none; }
+
+    /* While offline, dim the frozen video so stale frames are obvious */
+    body.pi-offline .cam-tile img,
+    body.pi-offline #dedicated-img {
+      filter: grayscale(0.8) brightness(0.5);
+      transition: filter 0.3s;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      padding: 9px 18px;
+      border-radius: var(--radius);
+      box-shadow: var(--glow);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 500;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.error { border-color: var(--red); color: var(--red); box-shadow: 0 0 12px rgba(255,59,92,0.35); }
+
+    /* ── Scrollbar ──────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .camera-grid { grid-template-columns: 1fr; }
+      .dedicated-layout { grid-template-columns: 1fr; }
+      .controls-panel { order: -1; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Connection status banner (hidden until the Pi stops responding) -->
+<div id="offline-banner">
+  <span class="offline-dot"></span>
+  <span class="offline-msg">Connection to ATOMICam lost — the Pi may be rebooting. Waiting to reconnect…</span>
+</div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <div class="nucleus"></div>
+      <div class="orbit orbit-1"></div>
+      <div class="orbit orbit-2"></div>
+      <div class="orbit orbit-3"></div>
+    </div>
+    <div class="logo-text">ATOMI<span>Cam</span></div>
+  </div>
+  <div class="header-status">
+    <span><span class="status-dot"></span> &nbsp;LIVE</span>
+    <span id="cam-count">{{ active_cameras|length }} CAMERAS</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<div class="app">
+  <div class="view-tabs">
+    <button class="tab-btn active" data-view="grid" onclick="setView('grid')">▦ &nbsp;GRID VIEW</button>
+    <button class="tab-btn" data-view="dedicated" onclick="setView('dedicated')">▣ &nbsp;DEDICATED VIEW</button>
+    <button class="tab-btn tab-right" data-view="admin" onclick="setView('admin')">☉ &nbsp;ADMIN OPTIONS</button>
+  </div>
+
+  <!-- ── Grid View ─────────────────────────────────── -->
+  <div id="view-grid">
+    <div class="camera-grid">
+      {% for cam in active_cameras %}
+      <div class="cam-tile" onclick="openDedicated({{ cam.id }})">
+        <div class="cam-tile-header">
+          <span class="cam-tile-label">{{ cam.label }}</span>
+          <span class="cam-tile-hint">:{{ cam.port }}</span>
+        </div>
+        <div class="cam-tile-media">
+          <img
+            class="stream-img{{ ' rotated' if cam.rotate in [90, 270] else '' }}"
+            data-stream="http://{{ request.host.split(':')[0] }}:{{ cam.port }}/stream"
+            src="http://{{ request.host.split(':')[0] }}:{{ cam.port }}/stream"
+            alt="{{ cam.label }}"
+            onload="streamOnLoad(this)" onerror="streamOnError(this)"
+          >
+          <svg class="cam-tile-reticle" data-cam-id="{{ cam.id }}" viewBox="0 0 80 60" preserveAspectRatio="none"></svg>
+          <div class="no-signal-overlay"><span>NO SIGNAL</span></div>
+        </div>
+        <div class="cam-tile-footer">
+          <span>{{ cam.width }}×{{ cam.height }}</span>
+          <span>MJPEG</span>
+          <span>{{ cam.device }}</span>
+        </div>
+        <div class="cam-tile-overlay"><span>EXPAND</span></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Dedicated View ────────────────────────────── -->
+  <div id="view-dedicated">
+    <div class="cam-selector">
+      {% for cam in active_cameras %}
+      <button
+        class="cam-sel-btn {% if loop.first %}active{% endif %}"
+        data-cam-id="{{ cam.id }}"
+        onclick="switchDedicatedCam({{ cam.id }})"
+      >{{ cam.label }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="dedicated-layout">
+      <!-- Left: stream + reticle overlay -->
+      <div>
+        <div class="dedicated-stream-wrap">
+          <div class="dedicated-stream-header">
+            <span class="stream-title" id="dedicated-title">Camera 1</span>
+            <span class="stream-badge">● LIVE</span>
+          </div>
+          <div class="stream-canvas-wrap">
+            <img id="dedicated-img" class="stream-img" src="" alt="Dedicated stream"
+              onload="streamOnLoad(this)" onerror="streamOnError(this)">
+            <div class="no-signal-overlay"><span>NO SIGNAL</span></div>
+            <!--
+              Reticle SVG viewBox is 80×60 — a 4:3 ratio matching the camera
+              feed. With preserveAspectRatio="none" the SVG stretches to fill
+              the image exactly, so a circle in 80×60 space maps to a true
+              circle on screen (80 wide / 60 tall = 4:3, same as the image).
+              Crosshairs terminate at the circle edge, not outside it.
+              All strokes use opacity="0.5" for 50% transparency.
+            -->
+            <svg id="reticle-svg" viewBox="0 0 80 60" preserveAspectRatio="none">
+              <g id="reticle-group">
+
+                <!-- Type A: circle only -->
+                <g id="reticle-a">
+                  <circle id="ra-outer" cx="0" cy="0" r="10"
+                    fill="none" stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                </g>
+
+                <!-- Type B: circle + crosshairs clipped to circle edge -->
+                <g id="reticle-b" display="none">
+                  <circle id="rb-outer" cx="0" cy="0" r="10"
+                    fill="none" stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                  <!-- Crosshairs run exactly radius-to-radius, not beyond -->
+                  <line id="rb-h" x1="-10" y1="0" x2="10" y2="0"
+                    stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                  <line id="rb-v" x1="0" y1="-10" x2="0" y2="10"
+                    stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                </g>
+
+                <!-- Type C: outer circle + inner circle (half r) + crosshairs -->
+                <g id="reticle-c" display="none">
+                  <circle id="rc-outer" cx="0" cy="0" r="10"
+                    fill="none" stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                  <circle id="rc-inner" cx="0" cy="0" r="5"
+                    fill="none" stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                  <line id="rc-h" x1="-10" y1="0" x2="10" y2="0"
+                    stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                  <line id="rc-v" x1="0" y1="-10" x2="0" y2="10"
+                    stroke="currentColor" stroke-width="0.3" opacity="0.5"/>
+                </g>
+
+                <!-- Resize handle: sits at the reticle's upper-left corner,
+                     fades in on hover, drag to change the reticle radius. -->
+                <g id="reticle-handle" class="reticle-handle">
+                  <polygon id="reticle-handle-tri" points="0,0 1.4,0 0,1.4" fill="currentColor" opacity="0.9"/>
+                </g>
+
+              </g>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: controls panel -->
+      <div class="controls-panel">
+        <div class="controls-header">
+          <span class="controls-title">Image Controls</span>
+          <button class="reset-btn" onclick="resetControls()">↺ Reset</button>
+        </div>
+        <div class="controls-body" id="controls-body">
+          <div style="font-family:var(--mono);font-size:0.65rem;color:var(--text-dim);text-align:center;padding:20px 0;">
+            Loading controls…
+          </div>
+        </div>
+
+        <!-- Reticle Section -->
+        <div class="reticle-section">
+          <div class="reticle-section-title">Reticle</div>
+
+          <!-- Style selector: Off + three reticle styles -->
+          <div class="reticle-type-row">
+            <button class="reticle-type-btn active" id="rtype-off" onclick="setReticleType('off')" title="Off">
+              <svg viewBox="-25 -25 50 50" fill="none" stroke="#4a6070" stroke-width="2">
+                <line x1="-13" y1="-13" x2="13" y2="13"/>
+                <line x1="-13" y1="13" x2="13" y2="-13"/>
+              </svg>
+            </button>
+            <button class="reticle-type-btn" id="rtype-a" onclick="setReticleType('a')" title="Circle">
+              <svg viewBox="-25 -25 50 50" fill="none" stroke="#00e5ff" stroke-width="2" opacity="0.5">
+                <circle cx="0" cy="0" r="16"/>
+              </svg>
+            </button>
+            <button class="reticle-type-btn" id="rtype-b" onclick="setReticleType('b')" title="Circle + Crosshairs">
+              <svg viewBox="-25 -25 50 50" fill="none" stroke="#00e5ff" stroke-width="2" opacity="0.5">
+                <circle cx="0" cy="0" r="16"/>
+                <line x1="-16" y1="0" x2="16" y2="0"/>
+                <line x1="0" y1="-16" x2="0" y2="16"/>
+              </svg>
+            </button>
+            <button class="reticle-type-btn" id="rtype-c" onclick="setReticleType('c')" title="Double Circle + Crosshairs">
+              <svg viewBox="-25 -25 50 50" fill="none" stroke="#00e5ff" stroke-width="2" opacity="0.5">
+                <circle cx="0" cy="0" r="16"/>
+                <circle cx="0" cy="0" r="8"/>
+                <line x1="-16" y1="0" x2="16" y2="0"/>
+                <line x1="0" y1="-16" x2="0" y2="16"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Color picker + transparency -->
+          <div class="reticle-color-row">
+            <span class="reticle-color-label">Color</span>
+            <input type="color" id="reticle-color-picker" value="#00e5ff"
+              oninput="setReticleColor(this.value)" onchange="saveReticle()">
+            <input type="range" id="reticle-opacity" class="reticle-opacity-slider"
+              min="0.1" max="1" step="0.05" value="0.5" title="Reticle transparency"
+              oninput="setReticleOpacity(this.value)" onchange="saveReticle()">
+          </div>
+
+          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
+            Drag the reticle to reposition. Hover it and drag the corner handle to resize.
+          </div>
+
+        </div><!-- /reticle-section -->
+
+        <!-- Orientation Section -->
+        <div class="reticle-section">
+          <div class="reticle-section-title">Orientation</div>
+          <div class="reticle-type-row">
+            <button class="reticle-type-btn rot-btn" data-rot="0"   onclick="setRotation(0)">0°</button>
+            <button class="reticle-type-btn rot-btn" data-rot="90"  onclick="setRotation(90)">90°</button>
+            <button class="reticle-type-btn rot-btn" data-rot="180" onclick="setRotation(180)">180°</button>
+            <button class="reticle-type-btn rot-btn" data-rot="270" onclick="setRotation(270)">270°</button>
+          </div>
+          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
+            Rotates the camera feed. Applies to this camera in all views and restarts its stream briefly.
+          </div>
+        </div>
+
+        <!-- Resolution Section -->
+        <div class="reticle-section">
+          <div class="reticle-section-title">Resolution</div>
+          <select id="resolution-select" class="res-select" onchange="setResolution(this.value)" aria-label="Resolution">
+            <option value="320x240">320 × 240</option>
+            <option value="640x480">640 × 480</option>
+            <option value="800x600">800 × 600</option>
+            <option value="1024x768">1024 × 768</option>
+            <option value="1280x960">1280 × 960</option>
+          </select>
+          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
+            Sets this camera's capture resolution and restarts its stream briefly.
+          </div>
+        </div>
+
+      </div><!-- /controls-panel -->
+    </div><!-- /dedicated-layout -->
+  </div><!-- /view-dedicated -->
+
+
+  <!-- ── Admin Options ─────────────────────────────────── -->
+  <div id="admin-options">
+    <div class="admin-panel">
+      <div class="admin-panel-header">System Administration</div>
+      <div class="admin-buttons">
+
+        <button class="admin-action usb-recovery-btn" id="admin-reset-btn" onclick="adminResetCameras()">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 4v6h-6"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </span>
+          <span class="admin-text">
+            <span class="admin-label">Reset Cameras</span>
+            <span class="admin-desc">Re-enumerates all cameras (works on any hardware). Try this first to recover a stuck camera.</span>
+          </span>
+        </button>
+
+        <button class="admin-action usb-recovery-btn" id="admin-usb-btn" onclick="adminPowerCycleUSB()">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v10"/>
+              <path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>
+            </svg>
+          </span>
+          <span class="admin-text">
+            <span class="admin-label">Hard Power-Cycle USB</span>
+            <span class="admin-desc">Physically cuts USB power (supported hardware only). Use if a reset didn't recover the camera.</span>
+          </span>
+        </button>
+
+        <button class="admin-action danger" id="admin-reboot-btn" onclick="adminReboot()">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/>
+              <line x1="12" y1="2" x2="12" y2="12"/>
+            </svg>
+          </span>
+          <span class="admin-text">
+            <span class="admin-label">Reboot Raspberry Pi</span>
+            <span class="admin-desc">Restarts the host. Streams will be unavailable for roughly 30–60&nbsp;s.</span>
+          </span>
+        </button>
+
+      </div>
+      <div class="admin-note">
+        These actions affect the whole device. A reboot ends every active session and interrupts all camera streams.
+      </div>
+    </div>
+
+    <div class="admin-panel" style="margin-top:14px;">
+      <div class="admin-panel-header">Camera Configuration</div>
+      <div class="cam-cfg-body">
+
+        <button class="admin-action" id="detect-btn" onclick="detectCameras()" style="margin-bottom:14px;">
+          <span class="icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </span>
+          <span class="admin-text">
+            <span class="admin-label">Detect Connected Cameras</span>
+            <span class="admin-desc">Scan the USB bus and list available capture devices.</span>
+          </span>
+        </button>
+
+        <div id="cam-cfg-rows"><!-- built from current config on load --></div>
+
+        <div class="cam-cfg-actions">
+          <button class="cam-cfg-save" id="cam-cfg-save" onclick="saveCameraConfig()">Save &amp; Apply</button>
+        </div>
+        <div class="cam-cfg-status" id="cam-cfg-status"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div id="toast"></div>
+
+<script>
+  // ── App state ──────────────────────────────────────────────────
+  let dedicatedCamId = {{ default_cam_id }};
+  const cameras      = {{ cameras | tojson }};
+  let controlDebounce = {};
+
+  // ── Per-camera reticle state ───────────────────────────────────
+  function defaultReticle() {
+    return { type: 'off', color: '#00e5ff', r: 10, x: 40, y: 30, opacity: 0.5 };
+  }
+  // Restore any saved reticles that came down with the camera config
+  const reticleState = {};
+  cameras.forEach(c => {
+    if (c.reticle) reticleState[c.id] = Object.assign(defaultReticle(), c.reticle);
+  });
+  let reticle = reticleState[dedicatedCamId]
+    ? Object.assign({}, reticleState[dedicatedCamId])
+    : defaultReticle();
+
+  // ── Clock ──────────────────────────────────────────────────────
+  function updateClock() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-GB');
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── View switching ─────────────────────────────────────────────
+  function setView(view) {
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === view);
+    });
+    document.getElementById('view-grid').style.display      = view === 'grid'      ? 'block' : 'none';
+    document.getElementById('view-dedicated').style.display = view === 'dedicated' ? 'block' : 'none';
+    document.getElementById('admin-options').style.display  = view === 'admin'     ? 'block' : 'none';
+    if (view === 'dedicated') {
+      loadDedicatedStream(dedicatedCamId);
+      loadControls(dedicatedCamId);
+    }
+    if (view === 'admin') {
+      detectCameras(true);   // silently refresh the device list on open
+    }
+    updateHash(view);
+  }
+
+  // Keep the URL hash in sync with the current view so a config-triggered
+  // reload (rotation, resolution, device changes) returns to the same place.
+  function updateHash(view) {
+    const h = view === 'dedicated' ? `dedicated-${dedicatedCamId}` : view;
+    history.replaceState(null, '', '#' + h);
+  }
+
+  function restoreFromHash() {
+    const h = (location.hash || '').replace(/^#/, '');
+    if (h.startsWith('dedicated')) {
+      const parts = h.split('-');
+      const cid = parts.length > 1 ? parseInt(parts[1]) : dedicatedCamId;
+      // Only restore that camera if it's still active (has a selector button)
+      if (document.querySelector(`.cam-sel-btn[data-cam-id="${cid}"]`)) {
+        dedicatedCamId = cid;
+        reticle = reticleState[cid] ? Object.assign({}, reticleState[cid]) : defaultReticle();
+        syncReticleUI();
+      }
+      setView('dedicated');
+    } else if (h === 'admin') {
+      setView('admin');
+    } else {
+      setView('grid');
+    }
+  }
+
+function openDedicated(camId) {
+    reticleState[dedicatedCamId] = Object.assign({}, reticle);
+    dedicatedCamId = camId;
+    reticle = reticleState[camId]
+      ? Object.assign({}, reticleState[camId])
+      : defaultReticle();
+    syncReticleUI();
+    setView('dedicated');
+  }
+
+  // ── Dedicated stream ───────────────────────────────────────────
+  function loadDedicatedStream(camId) {
+    const cam = cameras.find(c => c.id === camId);
+    if (!cam) return;
+    const host = window.location.hostname;
+    const url = `http://${host}:${cam.port}/stream`;
+    const img = document.getElementById('dedicated-img');
+    img.dataset.stream = url;
+    img.src = url;
+    document.getElementById('dedicated-title').textContent = cam.label;
+    document.querySelectorAll('.cam-sel-btn').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.camId) === camId);
+    });
+    syncRotationUI(camId);
+    loadResolutionOptions(camId);
+  }
+
+  function switchDedicatedCam(camId) {
+    reticleState[dedicatedCamId] = Object.assign({}, reticle);
+    dedicatedCamId = camId;
+    reticle = reticleState[camId]
+      ? Object.assign({}, reticleState[camId])
+      : defaultReticle();
+    syncReticleUI();
+    loadDedicatedStream(camId);
+    loadControls(camId);
+    updateHash('dedicated');
+  }
+
+  // ── Camera orientation (per camera, applied Motion-side) ───────
+  function syncRotationUI(camId) {
+    const cam = cameras.find(c => c.id === camId);
+    const rot = cam ? (cam.rotate || 0) : 0;
+    document.querySelectorAll('.rot-btn').forEach(b => {
+      b.classList.toggle('active', parseInt(b.dataset.rot) === rot);
+    });
+  }
+
+  async function setRotation(deg) {
+    const camId = dedicatedCamId;
+    const cam = cameras.find(c => c.id === camId);
+    if (cam && (cam.rotate || 0) === deg) return;   // already at this rotation
+    showToast(`Rotating to ${deg}°…`, false);
+    try {
+      const res = await fetch(`/api/cameras/${camId}/rotate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rotate: deg })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (cam) cam.rotate = deg;
+        syncRotationUI(camId);
+        if (data.motion === 'ok') {
+          showToast('Applied — reloading…', false);
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          showToast(`Saved, but: ${data.motion}`, true);
+        }
+      } else {
+        showToast(data.error || 'Rotation failed', true);
+      }
+    } catch {
+      showToast('Network error', true);
+    }
+  }
+
+  // ── Camera resolution (per camera, applied Motion-side) ────────
+  // Fetch the resolutions this camera actually supports and rebuild the
+  // dropdown, so users can't pick a mode the hardware will reject.
+  const resolutionCache = {};   // camId -> [[w,h], ...]
+  async function loadResolutionOptions(camId) {
+    const cam = cameras.find(c => c.id === camId);
+    const sel = document.getElementById('resolution-select');
+    if (!sel || !cam) return;
+    let list = resolutionCache[camId];
+    if (!list) {
+      try {
+        const res  = await fetch(`/api/cameras/${camId}/resolutions`);
+        const data = await res.json();
+        list = (data.resolutions && data.resolutions.length) ? data.resolutions : null;
+      } catch { list = null; }
+      if (!list) list = [[320,240],[640,480],[800,600],[1024,768],[1280,960]];
+      resolutionCache[camId] = list;
+    }
+    const cur = `${cam.width}x${cam.height}`;
+    const items = list.slice();
+    if (!items.some(r => `${r[0]}x${r[1]}` === cur)) items.push([cam.width, cam.height]);
+    sel.innerHTML = items.map(r => {
+      const v = `${r[0]}x${r[1]}`;
+      return `<option value="${v}" ${v === cur ? 'selected' : ''}>${r[0]} × ${r[1]}</option>`;
+    }).join('');
+  }
+
+  async function setResolution(val) {
+    const [w, h] = val.split('x').map(Number);
+    const camId = dedicatedCamId;
+    const cam = cameras.find(c => c.id === camId);
+    if (cam && cam.width === w && cam.height === h) return;   // no change
+    showToast(`Setting ${w}×${h}…`, false);
+    try {
+      const res = await fetch(`/api/cameras/${camId}/resolution`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ width: w, height: h })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (cam) { cam.width = w; cam.height = h; }
+        if (data.motion === 'ok') {
+          showToast('Applied — reloading…', false);
+          setTimeout(() => location.reload(), 1500);
+        } else {
+          showToast(`Saved, but: ${data.motion}`, true);
+        }
+      } else {
+        showToast(data.error || 'Resolution change failed', true);
+      }
+    } catch {
+      showToast('Network error', true);
+    }
+  }
+
+
+  // ── Image controls ─────────────────────────────────────────────
+  async function loadControls(camId) {
+    const body = document.getElementById('controls-body');
+    body.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--text-dim);text-align:center;padding:20px 0;">Loading…</div>';
+    try {
+      const res = await fetch(`/api/controls/${camId}`);
+      renderControls(camId, await res.json());
+    } catch {
+      body.innerHTML = '<div style="font-family:var(--mono);font-size:0.65rem;color:var(--red);text-align:center;padding:20px 0;">Failed to load controls</div>';
+    }
+  }
+
+  function renderControls(camId, controls) {
+    const body = document.getElementById('controls-body');
+    body.innerHTML = '';
+    for (const [name, ctrl] of Object.entries(controls)) {
+      const row = document.createElement('div');
+      row.className = 'ctrl-row';
+      row.innerHTML = `
+        <div class="ctrl-label-row">
+          <span class="ctrl-label">${ctrl.label}</span>
+          <span class="ctrl-value" id="val-${name}">${ctrl.value}</span>
+        </div>
+        <input type="range" id="ctrl-${name}"
+          min="${ctrl.min}" max="${ctrl.max}" value="${ctrl.value}"
+          oninput="onCtrlInput(${camId}, '${name}', this.value)">
+      `;
+      body.appendChild(row);
+    }
+  }
+
+  function onCtrlInput(camId, name, value) {
+    document.getElementById(`val-${name}`).textContent = value;
+    clearTimeout(controlDebounce[name]);
+    controlDebounce[name] = setTimeout(() => setControl(camId, name, parseInt(value)), 250);
+  }
+
+  async function setControl(camId, name, value) {
+    try {
+      const res = await fetch(`/api/controls/${camId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({control: name, value})
+      });
+      const data = await res.json();
+      if (data.ok) showToast(`${name}: ${value}`, false);
+      else showToast(data.error || 'Error', true);
+    } catch {
+      showToast('Network error', true);
+    }
+  }
+
+  async function resetControls() {
+    try {
+      await fetch(`/api/controls/${dedicatedCamId}/reset`, {method: 'POST'});
+      showToast('Controls reset to defaults', false);
+      loadControls(dedicatedCamId);
+    } catch {
+      showToast('Reset failed', true);
+    }
+  }
+
+  // ── Reticle ────────────────────────────────────────────────────
+  const svg    = document.getElementById('reticle-svg');
+  const rGroup = document.getElementById('reticle-group');
+
+  // Apply current reticle state to the SVG.
+  // The viewBox is 80×60 (4:3), so r is in those units.
+  // Crosshairs run exactly from -r to +r so they terminate at the circle edge.
+  function applyReticle() {
+    const r = reticle.r;
+    svg.style.color = reticle.color;
+    svg.style.setProperty('--reticle-opacity', reticle.opacity ?? 0.5);
+    rGroup.setAttribute('transform', `translate(${reticle.x}, ${reticle.y})`);
+
+    // Type A
+    document.getElementById('ra-outer').setAttribute('r', r);
+
+    // Type B
+    document.getElementById('rb-outer').setAttribute('r', r);
+    document.getElementById('rb-h').setAttribute('x1', -r); document.getElementById('rb-h').setAttribute('x2', r);
+    document.getElementById('rb-v').setAttribute('y1', -r); document.getElementById('rb-v').setAttribute('y2', r);
+
+    // Type C
+    document.getElementById('rc-outer').setAttribute('r', r);
+    document.getElementById('rc-inner').setAttribute('r', r / 2);
+    document.getElementById('rc-h').setAttribute('x1', -r); document.getElementById('rc-h').setAttribute('x2', r);
+    document.getElementById('rc-v').setAttribute('y1', -r); document.getElementById('rc-v').setAttribute('y2', r);
+
+    // Show active type ('off' shows none)
+    ['a','b','c'].forEach(t =>
+      document.getElementById(`reticle-${t}`).setAttribute('display', t === reticle.type ? '' : 'none')
+    );
+
+    // Park the resize handle at the reticle's upper-left corner, sized to
+    // roughly 1/20 of the reticle (with a small floor so it stays grabbable)
+    const hs = Math.max(1, r * 0.12);
+    document.getElementById('reticle-handle-tri').setAttribute('points', `0,0 ${hs},0 0,${hs}`);
+    document.getElementById('reticle-handle').setAttribute('transform', `translate(${-r}, ${-r})`);
+  }
+
+  // Build static reticle SVG shapes for a saved reticle (used by grid tiles)
+  function reticleShapes(ret) {
+    if (!ret || ret.type === 'off') return '';
+    const { r, x, y, color, type } = ret;
+    const op = ret.opacity ?? 0.5;
+    const s = `stroke="${color}" stroke-width="0.3" opacity="${op}"`;
+    const parts = [`<circle cx="${x}" cy="${y}" r="${r}" fill="none" ${s}/>`];
+    if (type === 'c') parts.push(`<circle cx="${x}" cy="${y}" r="${r / 2}" fill="none" ${s}/>`);
+    if (type === 'b' || type === 'c') {
+      parts.push(`<line x1="${x - r}" y1="${y}" x2="${x + r}" y2="${y}" ${s}/>`);
+      parts.push(`<line x1="${x}" y1="${y - r}" x2="${x}" y2="${y + r}" ${s}/>`);
+    }
+    return parts.join('');
+  }
+
+  // Paint every grid tile's reticle from its camera's saved state
+  function renderGridReticles() {
+    document.querySelectorAll('.cam-tile-reticle').forEach(el => {
+      el.innerHTML = reticleShapes(reticleState[parseInt(el.dataset.camId)]);
+    });
+  }
+
+  function syncReticleUI() {
+    const on = reticle.type !== 'off';
+    svg.classList.toggle('active', on);
+    document.getElementById('reticle-color-picker').value = reticle.color;
+    document.getElementById('reticle-opacity').value = reticle.opacity ?? 0.5;
+    document.querySelectorAll('.reticle-type-btn').forEach(b => {
+      b.classList.toggle('active', b.id === `rtype-${reticle.type}`);
+    });
+    applyReticle();
+  }
+
+  function setReticleType(type) {
+    reticle.type = type;
+    svg.classList.toggle('active', type !== 'off');
+    document.querySelectorAll('.reticle-type-btn').forEach(b => {
+      b.classList.toggle('active', b.id === `rtype-${type}`);
+    });
+    applyReticle();
+    saveReticle();
+  }
+
+  function setReticleColor(color) {
+    reticle.color = color;
+    applyReticle();
+  }
+
+  function setReticleOpacity(value) {
+    reticle.opacity = parseFloat(value);
+    applyReticle();
+  }
+
+  // Persist this camera's reticle (style, colour, size, position, opacity) to the
+  // server, keyed by the camera it belongs to. Best-effort and silent.
+  async function saveReticle() {
+    const camId = dedicatedCamId;
+    const r = Object.assign({}, reticle);
+    reticleState[camId] = r;                 // keep local state in sync
+    renderGridReticles();                    // reflect the change on the grid
+    try {
+      await fetch(`/api/cameras/${camId}/reticle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: r.type, color: r.color, r: r.r, x: r.x, y: r.y, opacity: r.opacity })
+      });
+    } catch { /* best-effort; a failed save just means it won't persist */ }
+  }
+
+  // ── Reticle interaction: move (image body) + resize (corner handle) ──
+  let dragging = false, resizing = false, reticleChanged = false;
+  let dragOffX = 0, dragOffY = 0;
+  const R_MIN = 2, R_MAX = 28;
+  const handle = document.getElementById('reticle-handle');
+
+  // Convert a mouse/touch event to SVG viewBox coordinates (80×60 space)
+  function svgPoint(evt) {
+    const rect = svg.getBoundingClientRect();
+    const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+    const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+    return {
+      x: ((clientX - rect.left) / rect.width)  * 80,
+      y: ((clientY - rect.top)  / rect.height) * 60,
+    };
+  }
+
+  // Press on the image body → move the reticle
+  function startMove(e) {
+    if (reticle.type === 'off') return;
+    dragging = true;
+    const pt = svgPoint(e);
+    dragOffX = pt.x - reticle.x;
+    dragOffY = pt.y - reticle.y;
+    e.preventDefault();
+  }
+  svg.addEventListener('mousedown', startMove);
+  svg.addEventListener('touchstart', startMove, {passive: false});
+
+  // Press on the corner handle → resize (and don't also move)
+  function startResize(e) {
+    if (reticle.type === 'off') return;
+    resizing = true;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  handle.addEventListener('mousedown', startResize);
+  handle.addEventListener('touchstart', startResize, {passive: false});
+
+  function onPointerMove(e) {
+    if (resizing) {
+      const pt = svgPoint(e);
+      // Handle sits at the corner, a distance r·√2 from centre; divide it back out
+      const dist = Math.hypot(reticle.x - pt.x, reticle.y - pt.y) / Math.SQRT2;
+      reticle.r = Math.max(R_MIN, Math.min(R_MAX, dist));
+      reticleChanged = true;
+      applyReticle();
+      if (e.cancelable) e.preventDefault();
+    } else if (dragging) {
+      const pt = svgPoint(e);
+      reticle.x = Math.max(0, Math.min(80, pt.x - dragOffX));
+      reticle.y = Math.max(0, Math.min(60, pt.y - dragOffY));
+      reticleChanged = true;
+      applyReticle();
+      if (e.cancelable) e.preventDefault();
+    }
+  }
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('touchmove', onPointerMove, {passive: false});
+
+  function endPointer() {
+    dragging = false; resizing = false;
+    if (reticleChanged) { reticleChanged = false; saveReticle(); }
+  }
+  window.addEventListener('mouseup',  endPointer);
+  window.addEventListener('touchend', endPointer);
+
+  // Initialise
+  applyReticle();
+
+  // ── Toast ──────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, isError = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'show' + (isError ? ' error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 2200);
+  }
+
+  // ── Admin actions ──────────────────────────────────────────────
+  // Shared driver for the two USB-recovery actions. Both interrupt the streams
+  // and restart Motion server-side, so on success we reload to reconnect.
+  async function usbRecovery(endpoint, startMsg) {
+    const btns = document.querySelectorAll('.usb-recovery-btn');
+    btns.forEach(b => b.disabled = true);
+    showToast(startMsg, false);
+    try {
+      const res  = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('Done — reloading…', false);
+        setTimeout(() => location.reload(), 2500);
+        return;   // leave buttons disabled; the page is about to reload
+      }
+      showToast(data.error || 'Recovery failed', true);
+    } catch {
+      showToast('Network error', true);
+    }
+    btns.forEach(b => b.disabled = false);
+  }
+
+  function adminResetCameras() {
+    if (!confirm('Reset all cameras?\n\nEach camera briefly disconnects and reconnects, then streams restart. This takes several seconds.')) return;
+    usbRecovery('/api/admin/reset-cameras', 'Resetting cameras…');
+  }
+
+  function adminPowerCycleUSB() {
+    if (!confirm('Hard power-cycle the USB ports?\n\nThis physically cuts USB power (supported hardware only). All cameras disconnect, then streams restart. This takes several seconds.')) return;
+    usbRecovery('/api/admin/usb-powercycle', 'Power-cycling USB…');
+  }
+
+  async function adminReboot() {
+    if (!confirm('Reboot the Raspberry Pi?\n\nAll streams and sessions will be interrupted for 30–60 seconds.')) return;
+    const btn = document.getElementById('admin-reboot-btn');
+    btn.disabled = true;
+    try {
+      const res  = await fetch('/api/admin/reboot', { method: 'POST' });
+      const data = await res.json();
+      showToast(data.ok ? 'Reboot initiated…' : (data.error || 'Reboot failed'), !data.ok);
+    } catch {
+      // The host may drop the connection before replying — that's expected on reboot.
+      showToast('Reboot initiated…', false);
+    }
+  }
+
+  // ── Camera configuration UI ────────────────────────────────────
+  // Current config comes from the injected `cameras` array; the Detect button
+  // fills each device dropdown with the capture devices found on the USB bus.
+  // Rotation is set per camera in the Dedicated view, not here.
+  let detectedDevices = [];   // [{name, path}] from /api/cameras/detect
+
+  function buildCameraConfigRows() {
+    const wrap = document.getElementById('cam-cfg-rows');
+    wrap.innerHTML = '';
+    cameras.forEach(cam => {
+      const row = document.createElement('div');
+      row.className = 'cam-cfg-row';
+      row.dataset.camId = cam.id;
+      row.innerHTML = `
+        <span class="cam-cfg-slot">Cam ${cam.id + 1}</span>
+        <input type="text" class="cam-cfg-label" value="${cam.label}" maxlength="24" aria-label="Camera label">
+        <select class="cam-cfg-device" aria-label="Device" style="grid-column: 2 / 3;"></select>
+      `;
+      wrap.appendChild(row);
+      populateDeviceSelect(row.querySelector('.cam-cfg-device'), cam.device);
+    });
+  }
+
+  // Fill one device dropdown: "No camera" + detected devices + the currently-set
+  // device (so a configured-but-currently-unplugged camera still shows its value).
+  function populateDeviceSelect(sel, current) {
+    const seen = new Set();
+    const opts = [{ value: "", text: "— No camera —" }];
+    detectedDevices.forEach(d => {
+      seen.add(d.path);
+      opts.push({ value: d.path, text: `${d.path} — ${d.name}` });
+    });
+    if (current && !seen.has(current)) {
+      opts.push({ value: current, text: `${current} (current)` });
+    }
+    sel.innerHTML = opts.map(o =>
+      `<option value="${o.value}" ${o.value === current ? 'selected' : ''}>${o.text}</option>`
+    ).join('');
+  }
+
+  async function detectCameras(silent = false) {
+    const btn = document.getElementById('detect-btn');
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/api/cameras/detect');
+      const data = await res.json();
+      detectedDevices = data.devices || [];
+      // Re-fill each device dropdown, preserving the current selection
+      document.querySelectorAll('.cam-cfg-row').forEach(row => {
+        const sel = row.querySelector('.cam-cfg-device');
+        populateDeviceSelect(sel, sel.value);
+      });
+      if (!silent) {
+        showToast(detectedDevices.length
+          ? `Found ${detectedDevices.length} camera${detectedDevices.length === 1 ? '' : 's'}`
+          : 'No capture devices found', detectedDevices.length === 0);
+      }
+    } catch {
+      if (!silent) showToast('Detection failed', true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function saveCameraConfig() {
+    const rows = [...document.querySelectorAll('.cam-cfg-row')];
+    const payload = { cameras: rows.map(row => ({
+      id:     parseInt(row.dataset.camId),
+      label:  row.querySelector('.cam-cfg-label').value.trim(),
+      device: row.querySelector('.cam-cfg-device').value,
+    })) };
+
+    const btn = document.getElementById('cam-cfg-save');
+    const statusEl = document.getElementById('cam-cfg-status');
+    btn.disabled = true;
+    statusEl.textContent = 'Applying…';
+    try {
+      const res = await fetch('/api/cameras/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        statusEl.innerHTML = `<span class="err">${data.error || 'Save failed'}</span>`;
+        showToast(data.error || 'Save failed', true);
+        return;
+      }
+      // Report per-camera Motion result
+      const motion = data.motion || {};
+      const allOk = Object.values(motion).every(v => v === 'ok');
+      statusEl.innerHTML = Object.entries(motion).map(([id, msg]) =>
+        `<div>Cam ${parseInt(id) + 1}: <span class="${msg === 'ok' ? 'ok' : 'err'}">${msg}</span></div>`
+      ).join('') || '<span class="ok">Saved.</span>';
+
+      if (allOk) {
+        showToast('Applied — reloading…', false);
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        showToast('Saved, but some cameras need attention', true);
+      }
+    } catch {
+      statusEl.innerHTML = '<span class="err">Network error</span>';
+      showToast('Network error', true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── Stream connection handling: auto-retry + unified "No signal" ──
+  // MJPEG <img> streams don't recover on their own after a drop (e.g. while a
+  // camera's Motion instance restarts on a rotation/resolution change). We show
+  // a consistent "No signal" overlay and keep retrying, so feeds reconnect by
+  // themselves instead of sitting dead until a manual refresh.
+  const STREAM_RETRY_MS = 3000;
+  function streamWrap(img) {
+    return img.closest('.cam-tile-media') || img.closest('.stream-canvas-wrap');
+  }
+  function streamOnLoad(img) {
+    const w = streamWrap(img);
+    if (w) w.classList.remove('signal-lost');
+  }
+  function streamOnError(img) {
+    const w = streamWrap(img);
+    if (w) w.classList.add('signal-lost');
+    clearTimeout(img._retryTimer);
+    img._retryTimer = setTimeout(() => retryStream(img), STREAM_RETRY_MS);
+  }
+  function retryStream(img) {
+    const base = img.dataset.stream;
+    if (!base) return;
+    img.src = base + (base.includes('?') ? '&' : '?') + '_r=' + Date.now();
+  }
+
+  buildCameraConfigRows();
+  detectCameras(true);    // pre-populate device dropdowns so no manual scan is needed
+  renderGridReticles();   // draw saved reticles onto the grid tiles
+  restoreFromHash();   // return to whatever view we were on before a reload
+
+  // Catch any grid stream that already failed before this script ran
+  document.querySelectorAll('.stream-img').forEach(img => {
+    if (img.complete && img.naturalWidth === 0 && img.dataset.stream) streamOnError(img);
+  });
+
+  // ── Connection watchdog ────────────────────────────────────────
+  // One tiny heartbeat request every few seconds detects when the Pi goes
+  // down (e.g. a reboot) and when it comes back. It costs far less than the
+  // MJPEG video decoding already running, so it adds no meaningful load — and
+  // it pauses entirely while the browser tab is in the background.
+  const HEARTBEAT_MS = 4000;
+  let piOnline = true;
+
+  async function checkHeartbeat() {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const res = await fetch('/api/health', { cache: 'no-store', signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error('bad status');
+      if (!piOnline) onPiReconnected();   // was down, now responding → it rebooted
+    } catch {
+      clearTimeout(timer);
+      if (piOnline) onPiOffline();
+    }
+  }
+
+  function onPiOffline() {
+    piOnline = false;
+    document.body.classList.add('pi-offline');
+    document.getElementById('offline-banner').classList.add('show');
+  }
+
+  function onPiReconnected() {
+    piOnline = true;
+    const banner = document.getElementById('offline-banner');
+    banner.classList.add('reconnected');
+    banner.querySelector('.offline-msg').textContent = 'Reconnected — reloading…';
+    // Brief grace period so Motion is serving streams again before we reload.
+    setTimeout(() => location.reload(), 1500);
+  }
+
+  // Poll on a timer (skipped while hidden), and re-check the moment the tab
+  // regains focus so a reboot that happened in the background is caught at once.
+  setInterval(() => { if (!document.hidden) checkHeartbeat(); }, HEARTBEAT_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkHeartbeat(); });
+  checkHeartbeat();
+</script>
+
+</body>
+</html>
+

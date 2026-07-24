@@ -1,0 +1,23 @@
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# ── ATOMICam local dev state ─────────────────────────────
+# In development the app writes cameras.json next to ATOMICam.py.
+# In production it lives in /var/lib/atomicam (outside the repo).
+cameras.json
+*.tmp
+
+# ── OS / editor cruft ────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
