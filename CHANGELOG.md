@@ -12,7 +12,8 @@ All notable changes to ATOMICam are documented here. The format is based on
 ### Fixed
 - Detection now excludes the Pi's on-SoC video devices (`bcm2835-codec`,
   `bcm2835-isp`, `rpi-hevc-dec`) by requiring a USB connection, so only real
-  cameras are detected, seeded, and listed.
+  cameras are detected, seeded, and listed.  Detection also excludes metadata
+  nodes.
 - On a fresh install, the viewer no longer shows phantom cameras or grey frames
   when fewer than four (or no) cameras are connected — only attached cameras
   appear.

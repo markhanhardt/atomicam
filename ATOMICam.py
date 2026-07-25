@@ -55,15 +55,24 @@ def save_cameras(cams):
 
 
 def _is_capture_device(dev):
-    """True if /dev/videoN is a real video-capture node (not a metadata node)."""
+    """True only if THIS node's own Device Caps include Video Capture.
+
+    Modern UVC cameras expose two /dev/video nodes: the real capture node and a
+    companion metadata node. Both share the driver-wide 'Capabilities' block, so
+    a naive search for 'Video Capture' matches both. Only the capture node lists
+    'Video Capture' in its per-node 'Device Caps'; checking that block excludes
+    the metadata node (which otherwise shows up and displays a grey screen)."""
     try:
         out = subprocess.check_output(
             ["v4l2-ctl", "-d", dev, "--all"],
             stderr=subprocess.DEVNULL, timeout=3
         ).decode()
-        return "Video Capture" in out
     except Exception:
         return False
+    # Isolate the per-node "Device Caps" block (its indented capability lines).
+    m = re.search(r"Device Caps\s*:.*?\n((?:[ \t]+\S.*\n)+)", out)
+    caps_block = m.group(1) if m else out   # fall back on drivers that omit it
+    return "Video Capture" in caps_block
 
 
 def _is_usb_video(dev):
