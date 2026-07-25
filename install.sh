@@ -248,10 +248,16 @@ rm -f "$TMP_SUDO"
 
 # ── 8. Enable + start services ───────────────────────────────────────────────
 log "Enabling and starting services…"
+# Motion instances: start on a fresh install; a no-op if already running (so a
+# re-run to apply an update doesn't needlessly interrupt live streams).
 for i in $(seq 0 $((NUM_CAMERAS - 1))); do
     systemctl enable --now "ATOMICam-motion@$i.service"
 done
-systemctl enable --now ATOMICam.service
+# The web app is always (re)started so that re-running this installer to apply an
+# update actually loads the new code. On first run it provisions Motion to match
+# the detected cameras.
+systemctl enable ATOMICam.service
+systemctl restart ATOMICam.service
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -259,7 +265,7 @@ echo
 log "ATOMICam installed."
 cat <<EOF
 
-  Open the interface:   http://${IP:-<raspberrypi-ip>}:5000
+  Open the interface:   http://${IP:-<pi-ip>}:5000
 
   Configure cameras:    Admin tab in the web UI (Detect → assign → label)
   Config / data file:   $CONFIG_FILE
