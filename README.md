@@ -57,10 +57,10 @@ preserved.
 Open the printed URL in any browser on the same network.
 
 - **Grid view** — every connected camera at once; click a tile to open the
-  dedicted view.
+  dedicated view.
 - **Dedicated view** — one camera full-screen, with image controls, the
   measurement reticle, orientation, and resolution.
-- **Admin options** — detect and assign cameras to slots, rename them, and
+- **Admin tools** — detect and assign cameras to slots, rename them, and
   utilize the recovery tools.
 
 Cameras, labels, rotation, resolution, and reticles are all configured from the
