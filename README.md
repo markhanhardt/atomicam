@@ -1,36 +1,35 @@
 # ATOMICam
 
 A lightweight, web-based viewer for up to four USB cameras on a Raspberry Pi,
-built for laboratory use. It streams all connected cameras on a single page,
-lets you open any one full-screen with adjustable measurement overlays, and is
-served entirely from the Pi — no internet required after installation.
+built for laboratory use. ATOMICam can stream all selected cameras on a single
+page, provides a dedicated single-camera view with adjustable measurement
+overlays, and is served entirely from the Raspberry Pi — no internet required
+after installation.
 
 ## Features
 
 - Live **grid view** of up to four USB cameras, with a full-screen **dedicated
-  view** for any one.
-- Per-camera **image controls** (brightness, contrast, saturation, and more)
-  via V4L2.
-- Adjustable measurement **reticle** — three styles, plus color, size,
-  position, and transparency — saved per camera.
-- Per-camera **rotation** (0/90/180/270°) and **resolution**, set from the web
-  UI.
-- Web-based **camera setup**: detect connected cameras and assign, label, or
-  clear each slot — no terminal needed after install.
-- **Recovery tools**: a hardware-independent camera reset, a hard USB
-  power-cycle, and a reboot.
-- Runs **offline** — only local streams, no external resources.
+  view** for any one camera.
+- Per-camera **image controls** (resolution, orientation, brightness, contrast,
+  saturation, and more) via V4L2.
+- Measurement **reticle** with adjustable size, location, color, and style.
+- Web-based **camera setup** to select detected cameras and assign, label, or
+  clear each camera slot.
+- **Recovery tools** to reset a stuck camera, powercycle the entire USB bus,
+  or reboot the Raspberry Pi remotely.
+- Runs **offline** without need for an internet connection — only local
+  streams, no external resources.
 
 ## Requirements
 
-- Raspberry Pi running Raspberry Pi OS (Bookworm or Bullseye).
+- Raspberry Pi 4B running Raspberry Pi OS (Bullseye [2021] or later).
 - One to four USB (UVC) cameras.
 - Installed automatically by the installer: `motion`, `uhubctl`, `v4l-utils`,
   and Flask (`python3-flask`).
 
 ## Installation
 
-Clone the repository onto the Pi and run the installer as root:
+Clone the repository onto the Raspberry Pi and run the installer as root:
 
 ```bash
 git clone https://github.com/markhanhardt/atomicam.git
@@ -38,30 +37,34 @@ cd atomicam
 sudo bash install.sh
 ```
 
+(If git is not installed on the Raspberry Pi, it can be installed via: `sudo apt install git`.)
+
 The installer creates a dedicated `atomicam` service user, installs the app and
 its systemd services, writes per-camera Motion configs, configures scoped
-passwordless `sudo` for the recovery actions, and starts everything. When it
-finishes it prints the address to open, typically:
+passwordless `sudo` for the recovery actions, and starts everything. When
+installation is completed, the ATOMICam viewer page address is displayed,
+typically:
 
 ```
-http://<pi-ip>:5000
+http://<raspberrypi-ip>:5000
 ```
 
-It is safe to re-run; existing camera configuration is preserved.
+It is safe to re-run the installation script; existing camera configuration is
+preserved.
 
 ## Usage
 
 Open the printed URL in any browser on the same network.
 
-- **Grid view** — every connected camera at once; click a tile to open it
-  full-screen.
+- **Grid view** — every connected camera at once; click a tile to open the
+  dedicted view.
 - **Dedicated view** — one camera full-screen, with image controls, the
   measurement reticle, orientation, and resolution.
-- **Admin** — detect and assign cameras to slots, rename them, and reach the
-  recovery tools.
+- **Admin options** — detect and assign cameras to slots, rename them, and
+  utilize the recovery tools.
 
 Cameras, labels, rotation, resolution, and reticles are all configured from the
-web interface — after installation you shouldn't need the terminal.
+web interface — after installation you shouldn't need to use the terminal.
 
 ## Configuration & data
 
