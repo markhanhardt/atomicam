@@ -259,7 +259,7 @@ echo
 log "ATOMICam installed."
 cat <<EOF
 
-  Open the interface:   http://${IP:-<pi-ip>}:5000
+  Open the interface:   http://${IP:-<raspberrypi-ip>}:5000
 
   Configure cameras:    Admin tab in the web UI (Detect → assign → label)
   Config / data file:   $CONFIG_FILE

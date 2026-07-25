@@ -9,6 +9,8 @@ from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
+VERSION = "1.1.0"
+
 # ── Paths & constants (env-overridable so the app runs in dev and production) ──
 # In production the systemd unit sets ATOMICAM_CONFIG to a writable location such
 # as /var/lib/atomicam/cameras.json; in dev it defaults to sitting next to this
@@ -64,12 +66,26 @@ def _is_capture_device(dev):
         return False
 
 
+def _is_usb_video(dev):
+    """True only for USB-connected video nodes. Excludes the Pi's on-SoC video
+    blocks (bcm2835-codec, bcm2835-isp, rpi-hevc-dec, ...) which are
+    memory-to-memory devices that also report 'Video Capture' but are not
+    cameras."""
+    node = os.path.basename(dev)
+    try:
+        real = os.path.realpath(f"/sys/class/video4linux/{node}/device")
+    except Exception:
+        return False
+    return "/usb" in real
+
+
 def _parse_v4l2_devices(listing):
-    """Parse `v4l2-ctl --list-devices` output into capture-capable devices.
+    """Parse `v4l2-ctl --list-devices` output into real USB cameras.
 
     Each USB camera exposes several /dev/videoN nodes (a capture node plus
-    metadata nodes); we keep only the ones that actually support capture, so
-    the user picks from real cameras rather than phantom devices.
+    metadata nodes); we keep only USB-connected nodes that actually support
+    capture, so the user picks from real cameras rather than phantom devices or
+    the Pi's on-SoC codec/ISP nodes.
     """
     devices = []
     current_name = None
@@ -80,7 +96,9 @@ def _parse_v4l2_devices(listing):
             current_name = line.rstrip(":").strip()
         else:
             path = line.strip()
-            if re.fullmatch(r"/dev/video\d+", path) and _is_capture_device(path):
+            if (re.fullmatch(r"/dev/video\d+", path)
+                    and _is_usb_video(path)
+                    and _is_capture_device(path)):
                 devices.append({"name": current_name or path, "path": path})
     return devices
 
@@ -115,7 +133,10 @@ def _seed_cameras():
 def load_cameras():
     """Load camera definitions from CONFIG_FILE, seeding defaults if it's
     missing or unreadable. The stream port is always derived from the id so it
-    can't drift out of sync with the Motion configs."""
+    can't drift out of sync with the Motion configs. Sets the module-level
+    FRESH_SEED flag when it had to seed, so first boot can push the detected
+    devices into Motion."""
+    global FRESH_SEED
     try:
         with open(CONFIG_FILE) as f:
             cams = json.load(f)
@@ -131,6 +152,7 @@ def load_cameras():
                 c.pop("reticle", None)
     except Exception:
         cams = _seed_cameras()
+        FRESH_SEED = True
         try:
             save_cameras(cams)
         except Exception:
@@ -138,6 +160,9 @@ def load_cameras():
     for c in cams:
         c["port"] = BASE_STREAM_PORT + c["id"]
     return cams
+
+
+FRESH_SEED = False
 
 
 CAMERAS = load_cameras()
@@ -163,7 +188,8 @@ def index():
     active = [c for c in CAMERAS if c.get("device")]
     default_cam_id = active[0]["id"] if active else 0
     return render_template("index.html", cameras=CAMERAS,
-                           active_cameras=active, default_cam_id=default_cam_id)
+                           active_cameras=active, default_cam_id=default_cam_id,
+                           version=VERSION)
 
 @app.route("/api/health")
 def api_health():
@@ -602,6 +628,13 @@ def _sync_unassigned_motion():
 
 
 if __name__ == "__main__":
-    _sync_unassigned_motion()
+    if FRESH_SEED:
+        # First run: the config was just seeded from detected cameras, so push
+        # those devices into Motion (rewrite configs, restart the assigned
+        # instances, stop the unassigned ones) rather than trusting the
+        # installer's placeholder configs.
+        _apply_to_motion(CAMERAS)
+    else:
+        _sync_unassigned_motion()
     # Listen on all interfaces so you can reach it from other devices on the LAN
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

@@ -91,6 +91,7 @@
 
     .logo-text { font-family: var(--mono); font-size: 1.1rem; color: var(--text-bright); letter-spacing: 0.15em; }
     .logo-text span { color: var(--accent); }
+    .logo-text span.logo-version { font-size: 0.5rem; color: var(--text-dim); letter-spacing: 0.05em; margin-left: 8px; opacity: 0.65; vertical-align: middle; }
 
     .header-status { display: flex; align-items: center; gap: 20px; font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); }
 
@@ -437,7 +438,7 @@
     #reticle-svg.active:hover .reticle-handle { opacity: 1; }
 
     /* ── Admin View ─────────────────────────────────────────────── */
-    #admin-options { display: none; padding: 16px 24px; overflow-y: auto; }
+    #admin-tools { display: none; padding: 16px 24px; overflow-y: auto; }
 
     .admin-panel {
       max-width: 620px;
@@ -505,6 +506,12 @@
 
     /* ── Camera configuration panel ─────────────────────────────── */
     .cam-cfg-body { padding: 16px; }
+    .cam-cfg-note {
+      font-family: var(--mono); font-size: 0.6rem; line-height: 1.6;
+      color: var(--text-dim); letter-spacing: 0.03em;
+      margin-bottom: 14px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
 
     .cam-cfg-row {
       display: grid;
@@ -642,7 +649,7 @@
       <div class="orbit orbit-2"></div>
       <div class="orbit orbit-3"></div>
     </div>
-    <div class="logo-text">ATOMI<span>Cam</span></div>
+    <div class="logo-text">ATOMI<span>Cam</span><span class="logo-version">v{{ version }}</span></div>
   </div>
   <div class="header-status">
     <span><span class="status-dot"></span> &nbsp;LIVE</span>
@@ -655,7 +662,7 @@
   <div class="view-tabs">
     <button class="tab-btn active" data-view="grid" onclick="setView('grid')">▦ &nbsp;GRID VIEW</button>
     <button class="tab-btn" data-view="dedicated" onclick="setView('dedicated')">▣ &nbsp;DEDICATED VIEW</button>
-    <button class="tab-btn tab-right" data-view="admin" onclick="setView('admin')">☉ &nbsp;ADMIN OPTIONS</button>
+    <button class="tab-btn tab-right" data-view="admin" onclick="setView('admin')">☉ &nbsp;ADMIN TOOLS</button>
   </div>
 
   <!-- ── Grid View ─────────────────────────────────── -->
@@ -811,18 +818,19 @@
             </button>
           </div>
 
-          <!-- Color picker + transparency -->
+          <!-- Color picker + opacity -->
           <div class="reticle-color-row">
             <span class="reticle-color-label">Color</span>
             <input type="color" id="reticle-color-picker" value="#00e5ff"
               oninput="setReticleColor(this.value)" onchange="saveReticle()">
+            <span class="reticle-color-label">Opacity</span>
             <input type="range" id="reticle-opacity" class="reticle-opacity-slider"
-              min="0.1" max="1" step="0.05" value="0.5" title="Reticle transparency"
+              min="0.1" max="1" step="0.05" value="0.5" title="Reticle opacity"
               oninput="setReticleOpacity(this.value)" onchange="saveReticle()">
           </div>
 
           <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
-            Drag the reticle to reposition. Hover it and drag the corner handle to resize.
+            Drag the reticle to reposition. Drag the corner handle to resize.
           </div>
 
         </div><!-- /reticle-section -->
@@ -836,9 +844,6 @@
             <button class="reticle-type-btn rot-btn" data-rot="180" onclick="setRotation(180)">180°</button>
             <button class="reticle-type-btn rot-btn" data-rot="270" onclick="setRotation(270)">270°</button>
           </div>
-          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
-            Rotates the camera feed. Applies to this camera in all views and restarts its stream briefly.
-          </div>
         </div>
 
         <!-- Resolution Section -->
@@ -851,9 +856,6 @@
             <option value="1024x768">1024 × 768</option>
             <option value="1280x960">1280 × 960</option>
           </select>
-          <div style="font-family:var(--mono);font-size:0.58rem;color:var(--text-dim);line-height:1.5;">
-            Sets this camera's capture resolution and restarts its stream briefly.
-          </div>
         </div>
 
       </div><!-- /controls-panel -->
@@ -861,8 +863,8 @@
   </div><!-- /view-dedicated -->
 
 
-  <!-- ── Admin Options ─────────────────────────────────── -->
-  <div id="admin-options">
+  <!-- ── Admin Tools ─────────────────────────────────── -->
+  <div id="admin-tools">
     <div class="admin-panel">
       <div class="admin-panel-header">System Administration</div>
       <div class="admin-buttons">
@@ -901,14 +903,11 @@
             </svg>
           </span>
           <span class="admin-text">
-            <span class="admin-label">Reboot Raspberry Pi</span>
+            <span class="admin-label">Reboot Host</span>
             <span class="admin-desc">Restarts the host. Streams will be unavailable for roughly 30–60&nbsp;s.</span>
           </span>
         </button>
 
-      </div>
-      <div class="admin-note">
-        These actions affect the whole device. A reboot ends every active session and interrupts all camera streams.
       </div>
     </div>
 
@@ -916,18 +915,10 @@
       <div class="admin-panel-header">Camera Configuration</div>
       <div class="cam-cfg-body">
 
-        <button class="admin-action" id="detect-btn" onclick="detectCameras()" style="margin-bottom:14px;">
-          <span class="icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="7"/>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-          </span>
-          <span class="admin-text">
-            <span class="admin-label">Detect Connected Cameras</span>
-            <span class="admin-desc">Scan the USB bus and list available capture devices.</span>
-          </span>
-        </button>
+        <div class="cam-cfg-note">
+          The device list refreshes automatically each time this tab is opened.
+          To rescan after plugging in a camera, switch to another tab and back.
+        </div>
 
         <div id="cam-cfg-rows"><!-- built from current config on load --></div>
 
@@ -977,8 +968,14 @@
     });
     document.getElementById('view-grid').style.display      = view === 'grid'      ? 'block' : 'none';
     document.getElementById('view-dedicated').style.display = view === 'dedicated' ? 'block' : 'none';
-    document.getElementById('admin-options').style.display  = view === 'admin'     ? 'block' : 'none';
+    document.getElementById('admin-tools').style.display  = view === 'admin'     ? 'block' : 'none';
     if (view === 'dedicated') {
+      // Load this camera's saved reticle from any entry path (tab click, grid
+      // tile, cam selector, or hash restore) so it always appears immediately.
+      reticle = reticleState[dedicatedCamId]
+        ? Object.assign({}, reticleState[dedicatedCamId])
+        : defaultReticle();
+      syncReticleUI();
       loadDedicatedStream(dedicatedCamId);
       loadControls(dedicatedCamId);
     }
@@ -1003,10 +1000,8 @@
       // Only restore that camera if it's still active (has a selector button)
       if (document.querySelector(`.cam-sel-btn[data-cam-id="${cid}"]`)) {
         dedicatedCamId = cid;
-        reticle = reticleState[cid] ? Object.assign({}, reticleState[cid]) : defaultReticle();
-        syncReticleUI();
       }
-      setView('dedicated');
+      setView('dedicated');   // setView loads the reticle for dedicatedCamId
     } else if (h === 'admin') {
       setView('admin');
     } else {
@@ -1015,13 +1010,9 @@
   }
 
 function openDedicated(camId) {
-    reticleState[dedicatedCamId] = Object.assign({}, reticle);
+    reticleState[dedicatedCamId] = Object.assign({}, reticle);  // save outgoing
     dedicatedCamId = camId;
-    reticle = reticleState[camId]
-      ? Object.assign({}, reticleState[camId])
-      : defaultReticle();
-    syncReticleUI();
-    setView('dedicated');
+    setView('dedicated');   // setView loads this camera's reticle
   }
 
   // ── Dedicated stream ───────────────────────────────────────────
@@ -1042,15 +1033,9 @@ function openDedicated(camId) {
   }
 
   function switchDedicatedCam(camId) {
-    reticleState[dedicatedCamId] = Object.assign({}, reticle);
+    reticleState[dedicatedCamId] = Object.assign({}, reticle);  // save outgoing
     dedicatedCamId = camId;
-    reticle = reticleState[camId]
-      ? Object.assign({}, reticleState[camId])
-      : defaultReticle();
-    syncReticleUI();
-    loadDedicatedStream(camId);
-    loadControls(camId);
-    updateHash('dedicated');
+    setView('dedicated');   // syncs reticle, stream, controls, and the URL hash
   }
 
   // ── Camera orientation (per camera, applied Motion-side) ───────
