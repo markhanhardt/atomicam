@@ -181,6 +181,16 @@ V4L2_CONTROLS = {
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+def _config_rev():
+    """A cheap 'has the config changed?' marker: the config file's mtime. Viewers
+    poll this via /api/health and re-sync when it changes, so a reticle drawn on
+    one computer appears on the others without a manual refresh."""
+    try:
+        return os.path.getmtime(CONFIG_FILE)
+    except OSError:
+        return 0.0
+
+
 @app.route("/")
 def index():
     # `cameras` is every slot (the config panel needs them all); `active_cameras`
@@ -189,12 +199,13 @@ def index():
     default_cam_id = active[0]["id"] if active else 0
     return render_template("index.html", cameras=CAMERAS,
                            active_cameras=active, default_cam_id=default_cam_id,
-                           version=VERSION)
+                           version=VERSION, config_rev=_config_rev())
 
 @app.route("/api/health")
 def api_health():
-    """Tiny liveness endpoint the page polls to detect reboots/outages."""
-    return jsonify({"ok": True})
+    """Tiny liveness endpoint the page polls to detect reboots/outages. Also
+    carries the config revision so viewers can live-sync each other's changes."""
+    return jsonify({"ok": True, "rev": _config_rev()})
 
 @app.route("/api/controls/<int:cam_id>")
 def api_get_controls(cam_id):
@@ -532,7 +543,7 @@ def api_set_reticle(cam_id):
         return jsonify({"error": f"Could not save config: {e}"}), 500
 
     CAMERAS = load_cameras()
-    return jsonify({"ok": True, "reticle": reticle})
+    return jsonify({"ok": True, "reticle": reticle, "rev": _config_rev()})
 
 
 # ── Admin actions ─────────────────────────────────────────────────────────────

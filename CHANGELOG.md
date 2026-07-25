@@ -31,6 +31,7 @@ All notable changes to ATOMICam are documented here. The format is based on
 - Re-running `install.sh` now restarts the web service, so it doubles as the
   update mechanism.
 - Renamed "Admin Options" to "Admin Tools".
+- Camera configuration now syncs between viewers open on other computers.
 
 ## [1.0.0] - 2026-07-20
 

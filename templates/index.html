@@ -939,6 +939,7 @@
   let dedicatedCamId = {{ default_cam_id }};
   const cameras      = {{ cameras | tojson }};
   let controlDebounce = {};
+  let configRev = {{ config_rev }};   // marker used to live-sync changes between viewers
 
   // ── Per-camera reticle state ───────────────────────────────────
   function defaultReticle() {
@@ -1295,11 +1296,13 @@ function openDedicated(camId) {
     reticleState[camId] = r;                 // keep local state in sync
     renderGridReticles();                    // reflect the change on the grid
     try {
-      await fetch(`/api/cameras/${camId}/reticle`, {
+      const res = await fetch(`/api/cameras/${camId}/reticle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: r.type, color: r.color, r: r.r, x: r.x, y: r.y, opacity: r.opacity })
       });
+      const data = await res.json();
+      if (data && data.rev !== undefined) configRev = data.rev;  // our own change; don't re-sync it
     } catch { /* best-effort; a failed save just means it won't persist */ }
   }
 
@@ -1416,7 +1419,7 @@ function openDedicated(camId) {
   }
 
   async function adminReboot() {
-    if (!confirm('Reboot the Raspberry Pi?\n\nAll streams and sessions will be interrupted for 30–60 seconds.')) return;
+    if (!confirm('Reboot the host?\n\nAll streams and sessions will be interrupted for 30–60 seconds.')) return;
     const btn = document.getElementById('admin-reboot-btn');
     btn.disabled = true;
     try {
@@ -1588,10 +1591,56 @@ function openDedicated(camId) {
       const res = await fetch('/api/health', { cache: 'no-store', signal: ctrl.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error('bad status');
+      const data = await res.json();
       if (!piOnline) onPiReconnected();   // was down, now responding → it rebooted
+      maybeSyncConfig(data.rev);           // pick up changes made on other viewers
     } catch {
       clearTimeout(timer);
       if (piOnline) onPiOffline();
+    }
+  }
+
+  // ── Live config sync between viewers ───────────────────────────
+  // When the config's revision marker changes, another viewer (or the same Pi)
+  // altered something. Reticle-only changes are applied in place; structural
+  // changes (device/rotation/resolution/label) reload to re-render cleanly.
+  async function maybeSyncConfig(rev) {
+    if (rev === undefined || rev === configRev) return;
+    if (dragging || resizing) return;   // don't clobber an in-progress edit; retry next beat
+    configRev = rev;
+    try {
+      const res = await fetch('/api/cameras/config');
+      const data = await res.json();
+      applyRemoteConfig(data.cameras || []);
+    } catch {
+      configRev = null;   // force a retry on the next heartbeat
+    }
+  }
+
+  function applyRemoteConfig(newCams) {
+    const structural = newCams.some(nc => {
+      const old = cameras.find(c => c.id === nc.id);
+      return !old || old.device !== nc.device || old.rotate !== nc.rotate
+          || old.width !== nc.width || old.height !== nc.height || old.label !== nc.label;
+    });
+    if (structural) {
+      showToast('Configuration changed — reloading…', false);
+      setTimeout(() => location.reload(), 800);
+      return;
+    }
+    // Reticle-only change: update state and repaint without a reload
+    newCams.forEach(nc => {
+      const old = cameras.find(c => c.id === nc.id);
+      if (old) old.reticle = nc.reticle;
+      if (nc.reticle) reticleState[nc.id] = Object.assign(defaultReticle(), nc.reticle);
+      else delete reticleState[nc.id];
+    });
+    renderGridReticles();
+    if (document.getElementById('view-dedicated').style.display !== 'none') {
+      reticle = reticleState[dedicatedCamId]
+        ? Object.assign({}, reticleState[dedicatedCamId])
+        : defaultReticle();
+      syncReticleUI();
     }
   }
 
