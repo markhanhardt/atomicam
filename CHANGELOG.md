@@ -4,7 +4,7 @@ All notable changes to ATOMICam are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
-## [1.1.0] - 2026-07-24
+## [1.1.0] - 2026-07-25
 
 ### Added
 - The app version is now shown subtly in the interface header.
