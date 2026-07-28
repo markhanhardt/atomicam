@@ -11,7 +11,7 @@ from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 GITHUB_REPO = "markhanhardt/atomicam"
 
@@ -92,13 +92,38 @@ def _is_usb_video(dev):
     return "/usb" in real
 
 
+def _stable_path(dev):
+    """Return a stable udev path for a /dev/videoN node so a camera's identity
+    survives re-enumeration (e.g. after a USB power-cycle or reset). Uses the
+    physical USB port path (/dev/v4l/by-path), which is stable for a fixed rig
+    and distinguishes even identical cameras. Falls back to the raw node."""
+    try:
+        target = os.path.realpath(dev)
+        by_path = "/dev/v4l/by-path"
+        for name in sorted(os.listdir(by_path)):
+            link = os.path.join(by_path, name)
+            if os.path.realpath(link) == target:
+                return link
+    except OSError:
+        pass
+    return dev
+
+
+def _port_hint(path):
+    """Short USB-port label (e.g. '1.2') pulled from a by-path device, so
+    identical cameras are distinguishable in the assignment menu."""
+    m = re.search(r"usb-\d+:([\d.]+):", path or "")
+    return m.group(1) if m else None
+
+
 def _parse_v4l2_devices(listing):
     """Parse `v4l2-ctl --list-devices` output into real USB cameras.
 
     Each USB camera exposes several /dev/videoN nodes (a capture node plus
     metadata nodes); we keep only USB-connected nodes that actually support
     capture, so the user picks from real cameras rather than phantom devices or
-    the Pi's on-SoC codec/ISP nodes.
+    the Pi's on-SoC codec/ISP nodes. Devices are identified by a stable udev
+    port path rather than the volatile /dev/videoN.
     """
     devices = []
     current_name = None
@@ -112,7 +137,14 @@ def _parse_v4l2_devices(listing):
             if (re.fullmatch(r"/dev/video\d+", path)
                     and _is_usb_video(path)
                     and _is_capture_device(path)):
-                devices.append({"name": current_name or path, "path": path})
+                stable = _stable_path(path)
+                hint = _port_hint(stable)
+                label = current_name or path
+                # Drop v4l2-ctl's verbose "(usb-...)" bus suffix; we add a short one.
+                label = re.sub(r"\s*\(usb-[^)]*\)\s*$", "", label)
+                if hint:
+                    label = f"{label} (USB {hint})"
+                devices.append({"name": label, "path": stable})
     return devices
 
 
@@ -149,7 +181,7 @@ def load_cameras():
     can't drift out of sync with the Motion configs. Sets the module-level
     FRESH_SEED flag when it had to seed, so first boot can push the detected
     devices into Motion."""
-    global FRESH_SEED
+    global FRESH_SEED, MIGRATED
     try:
         with open(CONFIG_FILE) as f:
             cams = json.load(f)
@@ -158,11 +190,23 @@ def load_cameras():
             c["id"]     = int(c["id"])
             c["label"]  = str(c["label"])
             c["device"] = str(c["device"])
+            # Migrate legacy configs that reference a raw /dev/videoN (which can
+            # shuffle on re-enumeration) to a stable udev port path.
+            if re.fullmatch(r"/dev/video\d+", c["device"]):
+                stable = _stable_path(c["device"])
+                if stable != c["device"]:
+                    c["device"] = stable
+                    MIGRATED = True
             c["rotate"] = int(c.get("rotate", 0))
             c["width"]  = int(c.get("width", DEFAULT_WIDTH))
             c["height"] = int(c.get("height", DEFAULT_HEIGHT))
             if not isinstance(c.get("reticle"), dict):
                 c.pop("reticle", None)
+        if MIGRATED:
+            try:
+                save_cameras(cams)   # persist stable paths so we migrate only once
+            except Exception:
+                pass
     except Exception:
         cams = _seed_cameras()
         FRESH_SEED = True
@@ -176,6 +220,7 @@ def load_cameras():
 
 
 FRESH_SEED = False
+MIGRATED = False
 
 
 CAMERAS = load_cameras()
@@ -684,11 +729,10 @@ def _sync_unassigned_motion():
 
 
 if __name__ == "__main__":
-    if FRESH_SEED:
-        # First run: the config was just seeded from detected cameras, so push
-        # those devices into Motion (rewrite configs, restart the assigned
-        # instances, stop the unassigned ones) rather than trusting the
-        # installer's placeholder configs.
+    if FRESH_SEED or MIGRATED:
+        # First run, or we just migrated devices to stable port paths: push the
+        # current devices into Motion (rewrite configs, restart assigned
+        # instances, stop unassigned ones) so streams use the stable paths.
         _apply_to_motion(CAMERAS)
     else:
         _sync_unassigned_motion()

@@ -1316,7 +1316,7 @@ function openDedicated(camId) {
     svg.classList.toggle('active', on);
     document.getElementById('reticle-color-picker').value = reticle.color;
     document.getElementById('reticle-opacity').value = reticle.opacity ?? 0.5;
-    document.querySelectorAll('.reticle-type-btn').forEach(b => {
+    document.querySelectorAll('.reticle-type-btn:not(.rot-btn)').forEach(b => {
       b.classList.toggle('active', b.id === `rtype-${reticle.type}`);
     });
     applyReticle();
@@ -1325,7 +1325,7 @@ function openDedicated(camId) {
   function setReticleType(type) {
     reticle.type = type;
     svg.classList.toggle('active', type !== 'off');
-    document.querySelectorAll('.reticle-type-btn').forEach(b => {
+    document.querySelectorAll('.reticle-type-btn:not(.rot-btn)').forEach(b => {
       b.classList.toggle('active', b.id === `rtype-${type}`);
     });
     applyReticle();
@@ -1511,15 +1511,21 @@ function openDedicated(camId) {
 
   // Fill one device dropdown: "No camera" + detected devices + the currently-set
   // device (so a configured-but-currently-unplugged camera still shows its value).
+  // A short, human label for a device path (its USB port for stable paths).
+  function shortDevice(path) {
+    const m = /usb-\d+:([\d.]+):/.exec(path || '');
+    return m ? `USB port ${m[1]}` : (path || '');
+  }
+
   function populateDeviceSelect(sel, current) {
     const seen = new Set();
     const opts = [{ value: "", text: "— No camera —" }];
     detectedDevices.forEach(d => {
       seen.add(d.path);
-      opts.push({ value: d.path, text: `${d.path} — ${d.name}` });
+      opts.push({ value: d.path, text: d.name });
     });
     if (current && !seen.has(current)) {
-      opts.push({ value: current, text: `${current} (current)` });
+      opts.push({ value: current, text: `${shortDevice(current)} — not detected` });
     }
     sel.innerHTML = opts.map(o =>
       `<option value="${o.value}" ${o.value === current ? 'selected' : ''}>${o.text}</option>`

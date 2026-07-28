@@ -4,6 +4,20 @@ All notable changes to ATOMICam are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [1.2.0] - 2026-07-24
+
+### Fixed
+- Cameras no longer swap positions, names, or reticles after a "Reset Cameras"
+  or "Hard Power-Cycle USB" action. Cameras are now identified by their stable
+  USB port path (`/dev/v4l/by-path`) instead of the `/dev/videoN` number, which
+  the kernel can reassign when devices re-enumerate. Existing configurations are
+  migrated automatically on first launch of this version.
+- Selecting a reticle no longer clears the highlighted rotation button.
+
+### Changed
+- The camera assignment menu labels each device with its USB port, so identical
+  cameras can be told apart.
+
 ## [1.1.0] - 2026-07-24
 
 ### Added
