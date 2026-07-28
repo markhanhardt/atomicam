@@ -650,7 +650,7 @@
 <!-- Connection status banner (hidden until the Pi stops responding) -->
 <div id="offline-banner">
   <span class="offline-dot"></span>
-  <span class="offline-msg">Connection to ATOMICam lost — the Pi may be rebooting. Waiting to reconnect…</span>
+  <span class="offline-msg">Connection to ATOMICam lost — the host may be rebooting. Waiting to reconnect…</span>
 </div>
 
 <header>
@@ -1030,7 +1030,7 @@
           : '';
         el.innerHTML =
           `<div class="admin-about-line">Update available: ${d.latest} (you have v${d.current}).${link}</div>` +
-          `<div>To update, run on the Pi (works even if the original folder was deleted):</div>` +
+          `<div>To update, run the following in the terminal:</div>` +
           `<code>git clone https://github.com/${githubRepo}.git /tmp/atomicam && sudo bash /tmp/atomicam/install.sh && rm -rf /tmp/atomicam</code>`;
       } else {
         el.textContent = `You're on the latest version (v${d.current}).`;

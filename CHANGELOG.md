@@ -4,7 +4,7 @@ All notable changes to ATOMICam are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
-## [1.2.0] - 2026-07-24
+## [1.2.0] - 2026-07-27
 
 ### Fixed
 - Cameras no longer swap positions, names, or reticles after a "Reset Cameras"
@@ -18,7 +18,7 @@ All notable changes to ATOMICam are documented here. The format is based on
 - The camera assignment menu labels each device with its USB port, so identical
   cameras can be told apart.
 
-## [1.1.0] - 2026-07-24
+## [1.1.0] - 2026-07-26
 
 ### Added
 - The app version is now shown subtly in the interface header.
