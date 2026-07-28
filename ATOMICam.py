@@ -5,11 +5,15 @@ import re
 import os
 import json
 import time
+import urllib.request
+import urllib.error
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
 VERSION = "1.1.0"
+
+GITHUB_REPO = "markhanhardt/atomicam"
 
 # ── Paths & constants (env-overridable so the app runs in dev and production) ──
 # In production the systemd unit sets ATOMICAM_CONFIG to a writable location such
@@ -208,13 +212,45 @@ def index():
     default_cam_id = active[0]["id"] if active else 0
     return render_template("index.html", cameras=CAMERAS,
                            active_cameras=active, default_cam_id=default_cam_id,
-                           version=VERSION, config_rev=_config_rev())
+                           version=VERSION, config_rev=_config_rev(),
+                           github_repo=GITHUB_REPO)
 
 @app.route("/api/health")
 def api_health():
     """Tiny liveness endpoint the page polls to detect reboots/outages. Also
     carries the config revision so viewers can live-sync each other's changes."""
     return jsonify({"ok": True, "rev": _config_rev()})
+
+
+def _parse_version(v):
+    """Turn a version string like 'v1.2.0' or '1.2' into a comparable tuple."""
+    return tuple(int(n) for n in re.findall(r"\d+", v or "")[:3])
+
+
+@app.route("/api/update-check")
+def api_update_check():
+    """Compare the running version against the latest GitHub release. Needs
+    internet; fails quietly when offline so it never disturbs the otherwise
+    offline-only app. Statuses: ok / no-releases / error / offline."""
+    info = {"current": VERSION, "latest": None, "update_available": False,
+            "url": None, "status": "ok"}
+    api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(api, headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"ATOMICam/{VERSION}",
+        })
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.load(resp)
+        latest = (data.get("tag_name") or "").strip()
+        info["latest"] = latest
+        info["url"] = data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases"
+        info["update_available"] = bool(latest) and _parse_version(latest) > _parse_version(VERSION)
+    except urllib.error.HTTPError as e:
+        info["status"] = "no-releases" if e.code == 404 else "error"
+    except Exception:
+        info["status"] = "offline"   # no internet / DNS failure / timeout
+    return jsonify(info)
 
 @app.route("/api/controls/<int:cam_id>")
 def api_get_controls(cam_id):

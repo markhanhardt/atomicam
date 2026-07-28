@@ -4,10 +4,14 @@ All notable changes to ATOMICam are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
-## [1.1.0] - 2026-07-25
+## [1.1.0] - 2026-07-24
 
 ### Added
 - The app version is now shown subtly in the interface header.
+- An update check in Admin Tools that compares the running version against the
+  latest GitHub release and, when a newer one exists, links to the release notes
+  and shows the update command. Requires internet and fails quietly when offline,
+  so it doesn't affect the otherwise offline-only app.
 
 ### Fixed
 - Detection now excludes the Pi's on-SoC video devices (`bcm2835-codec`,

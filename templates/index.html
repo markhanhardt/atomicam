@@ -459,6 +459,18 @@
       text-transform: uppercase;
     }
     .admin-buttons { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+    .admin-about { padding: 16px; font-family: var(--mono); }
+    .admin-about-version { font-size: 0.72rem; color: var(--text-bright); letter-spacing: 0.08em; }
+    .admin-about-status { font-size: 0.6rem; line-height: 1.7; color: var(--text-dim); margin-top: 8px; }
+    .admin-about-status a { color: var(--accent); text-decoration: none; }
+    .admin-about-status a:hover { text-decoration: underline; }
+    .admin-about-status.update .admin-about-line { color: var(--accent); }
+    .admin-about-status code {
+      display: block; margin-top: 6px; padding: 8px 10px;
+      background: var(--panel-2, #10151b); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 0.58rem;
+      white-space: pre-wrap; word-break: break-all; letter-spacing: 0;
+    }
 
     .admin-action {
       display: flex;
@@ -928,6 +940,14 @@
         <div class="cam-cfg-status" id="cam-cfg-status"></div>
       </div>
     </div>
+
+    <div class="admin-panel" style="margin-top:14px;">
+      <div class="admin-panel-header">About &amp; Updates</div>
+      <div class="admin-about">
+        <div class="admin-about-version">ATOMICam v{{ version }}</div>
+        <div id="update-status" class="admin-about-status">Checking for updates…</div>
+      </div>
+    </div>
   </div>
 
 </div><!-- /app -->
@@ -940,6 +960,7 @@
   const cameras      = {{ cameras | tojson }};
   let controlDebounce = {};
   let configRev = {{ config_rev }};   // marker used to live-sync changes between viewers
+  const githubRepo = "{{ github_repo }}";   // used by the update-check instructions
 
   // ── Per-camera reticle state ───────────────────────────────────
   function defaultReticle() {
@@ -982,8 +1003,41 @@
     }
     if (view === 'admin') {
       detectCameras(true);   // silently refresh the device list on open
+      checkForUpdate();      // check GitHub for a newer release (needs internet)
     }
     updateHash(view);
+  }
+
+  // ── Update check (internet-only; fails quietly offline) ────────
+  async function checkForUpdate() {
+    const el = document.getElementById('update-status');
+    if (!el) return;
+    el.className = 'admin-about-status';
+    el.textContent = 'Checking for updates…';
+    try {
+      const res = await fetch('/api/update-check');
+      const d = await res.json();
+      if (d.status === 'offline') {
+        el.textContent = 'Update check unavailable — no internet connection.';
+      } else if (d.status === 'no-releases') {
+        el.textContent = 'No published releases found on GitHub yet.';
+      } else if (d.status === 'error') {
+        el.textContent = 'Could not check for updates right now.';
+      } else if (d.update_available) {
+        el.className = 'admin-about-status update';
+        const link = d.url
+          ? ` &nbsp;<a href="${d.url}" target="_blank" rel="noopener">View release notes</a>`
+          : '';
+        el.innerHTML =
+          `<div class="admin-about-line">Update available: ${d.latest} (you have v${d.current}).${link}</div>` +
+          `<div>To update, run on the Pi (works even if the original folder was deleted):</div>` +
+          `<code>git clone https://github.com/${githubRepo}.git /tmp/atomicam && sudo bash /tmp/atomicam/install.sh && rm -rf /tmp/atomicam</code>`;
+      } else {
+        el.textContent = `You're on the latest version (v${d.current}).`;
+      }
+    } catch {
+      el.textContent = 'Update check unavailable — no internet connection.';
+    }
   }
 
   // Keep the URL hash in sync with the current view so a config-triggered
