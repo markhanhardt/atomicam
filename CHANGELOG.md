@@ -4,6 +4,14 @@ All notable changes to ATOMICam are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
 
+## [1.2.1] - 2026-07-28
+
+### Fixed
+- Changing a camera's device in Admin Tools no longer fails with an "Invalid
+  device path" error. The Save & Apply validation now accepts the stable
+  `/dev/v4l/by-path` (and `by-id`) device paths introduced in 1.2.0, not just
+  the legacy `/dev/videoN` form.
+
 ## [1.2.0] - 2026-07-27
 
 ### Fixed

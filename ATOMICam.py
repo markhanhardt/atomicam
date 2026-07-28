@@ -11,7 +11,7 @@ from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 GITHUB_REPO = "markhanhardt/atomicam"
 
@@ -494,9 +494,10 @@ def api_set_camera_config():
         seen_ids.add(cid)
 
         device = str(c.get("device", "")).strip()
-        # An empty device means "No camera" for this slot; otherwise it must be
-        # a real /dev/videoN path.
-        if device and not re.fullmatch(r"/dev/video\d+", device):
+        # An empty device means "No camera" for this slot; otherwise it must be a
+        # /dev/videoN node or a stable /dev/v4l/by-path (or by-id) device path.
+        if device and not re.fullmatch(
+                r"/dev/video\d+|/dev/v4l/by-(?:path|id)/[\w.:+-]+", device):
             return jsonify({"error": f"Invalid device path: {device!r}"}), 400
 
         label = str(c.get("label", "")).strip() or f"Camera {cid + 1}"
